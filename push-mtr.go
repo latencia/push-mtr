@@ -168,7 +168,7 @@ func main() {
 	}
 
 	if *repeat != 0 {
-		timer := time.NewTicker(1 * time.Second)
+		timer := time.NewTicker(time.Duration(*repeat) * time.Second)
 		for _ = range timer.C {
 			run(*count, *host, *brokerUrl, *topic, *stdout)
 		}
