@@ -1,12 +1,12 @@
 package main
 
 import (
-	geoipc "github.com/rubiojr/freegeoip-client"
 	mqttc "./utils/mqtt"
 	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	geoipc "github.com/rubiojr/freegeoip-client"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"os"
 	"os/exec"
@@ -29,10 +29,10 @@ type Host struct {
 }
 
 type Report struct {
-	Time        time.Time     `json:"time"`
-	Hosts       []*Host       `json:"hosts"`
-	Hops        int           `json:"hops"`
-	ElapsedTime time.Duration `json:"elapsed_time"`
+	Time        time.Time       `json:"time"`
+	Hosts       []*Host         `json:"hosts"`
+	Hops        int             `json:"hops"`
+	ElapsedTime time.Duration   `json:"elapsed_time"`
 	Location    geoipc.Location `json:"location"`
 }
 
@@ -116,14 +116,21 @@ func findMtrBin() string {
 	return ""
 }
 
-func run(count int, host, brokerUrl, topic string) error {
+func run(count int, host, brokerUrl, topic string, stdout bool) error {
 	r := NewReport(count, host)
-	msg, _ := json.Marshal(r)
-	err := mqttc.PushMsg("push-mtr", brokerUrl, topic, string(msg))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error sending report: %s", err)
+
+	if stdout {
+		msg, _ := json.MarshalIndent(r, "", "  ")
+		fmt.Println(string(msg))
+		return nil
+	} else {
+		msg, _ := json.Marshal(r)
+		err := mqttc.PushMsg("push-mtr", brokerUrl, topic, string(msg))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error sending report: %s", err)
+		}
+		return err
 	}
-	return err
 }
 
 func main() {
@@ -140,6 +147,9 @@ func main() {
 
 	brokerUrl := kingpin.Flag("broker-url", "MQTT broker URL").
 		Default("").String()
+
+	stdout := kingpin.Flag("stdout", "Print the report to stdout").
+		Default("false").Bool()
 
 	kingpin.Version("0.1")
 	kingpin.Parse()
@@ -159,10 +169,10 @@ func main() {
 	if *repeat != 0 {
 		timer := time.NewTicker(1 * time.Second)
 		for _ = range timer.C {
-			run(*count, *host, *brokerUrl, *topic)
+			run(*count, *host, *brokerUrl, *topic, *stdout)
 		}
 	} else {
-		err := run(*count, *host, *brokerUrl, *topic)
+		err := run(*count, *host, *brokerUrl, *topic, *stdout)
 		if err != nil {
 			os.Exit(1)
 		}
