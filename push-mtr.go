@@ -163,6 +163,7 @@ func main() {
 		*brokerUrl = os.Getenv("MQTT_URL")
 		if *brokerUrl == "" {
 			fmt.Fprintf(os.Stderr, "Invalid MQTT broker URL")
+			os.Exit(1)
 		}
 	}
 
