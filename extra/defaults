@@ -1,0 +1,5 @@
+# defaults for /etc/default/push-mtr on Debian systems
+# Both HOSTS (comma separated) and the broker URL are
+# mandatory
+HOSTS=""
+MQTT_URL=""
