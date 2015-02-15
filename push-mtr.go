@@ -127,7 +127,7 @@ func run(count int, host, brokerUrl, topic string, stdout bool) error {
 		msg, _ := json.Marshal(r)
 		err := mqttc.PushMsg("push-mtr", brokerUrl, topic, string(msg))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error sending report: %s", err)
+			fmt.Fprintf(os.Stderr, "Error sending report: %s\n", err)
 		}
 		return err
 	}
@@ -155,14 +155,14 @@ func main() {
 	kingpin.Parse()
 
 	if findMtrBin() == "" {
-		fmt.Fprintf(os.Stderr, "mtr binary not found in path")
+		fmt.Fprintf(os.Stderr, "mtr binary not found in path\n")
 		os.Exit(1)
 	}
 
 	if *brokerUrl == "" {
 		*brokerUrl = os.Getenv("MQTT_URL")
 		if *brokerUrl == "" {
-			fmt.Fprintf(os.Stderr, "Invalid MQTT broker URL")
+			fmt.Fprintf(os.Stderr, "Invalid MQTT broker URL\n")
 			os.Exit(1)
 		}
 	}
