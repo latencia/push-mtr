@@ -39,10 +39,11 @@ type Report struct {
 func NewReport(reportCycles int, host string, args ...string) *Report {
 	report := &Report{}
 	report.Time = time.Now()
-	args = append([]string{"--report", "-c", strconv.Itoa(reportCycles), host}, args...)
+	args = append([]string{"--report", "-n", "-c", strconv.Itoa(reportCycles), host}, args...)
 
 	tstart := time.Now()
-	rawOutput, err := exec.Command("mtr", args...).Output()
+	mtr := findMtrBin()
+	rawOutput, err := exec.Command(mtr, args...).Output()
 
 	if err != nil {
 		panic("Error running the mtr command")
@@ -100,8 +101,23 @@ func f2F(val string, field *float64) {
 	}
 }
 
+func findMtrBin() string {
+	paths := os.Getenv("PATH")
+	if paths == "" {
+		return ""
+	}
+
+	for _, path := range strings.Split(paths, ":") {
+		if _, err := os.Stat(path + "/mtr"); err == nil {
+			return path + "/mtr"
+		}
+	}
+
+	return ""
+}
+
 func run(count int, host, brokerUrl, topic string) error {
-	r := NewReport(count, host, "-n")
+	r := NewReport(count, host)
 	msg, _ := json.Marshal(r)
 	err := mqttc.PushMsg("push-mtr", brokerUrl, topic, string(msg))
 	if err != nil {
@@ -127,6 +143,11 @@ func main() {
 
 	kingpin.Version("0.1")
 	kingpin.Parse()
+
+	if findMtrBin() == "" {
+		fmt.Fprintf(os.Stderr, "mtr binary not found in path")
+		os.Exit(1)
+	}
 
 	if *brokerUrl == "" {
 		*brokerUrl = os.Getenv("MQTT_URL")
