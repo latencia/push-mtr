@@ -1,6 +1,7 @@
 package main
 
 import (
+	geoipc "github.com/rubiojr/freegeoip-client"
 	mqttc "./utils/mqtt"
 	"bufio"
 	"bytes"
@@ -28,13 +29,16 @@ type Host struct {
 }
 
 type Report struct {
+	Time        time.Time     `json:"time"`
 	Hosts       []*Host       `json:"hosts"`
 	Hops        int           `json:"hops"`
 	ElapsedTime time.Duration `json:"elapsed_time"`
+	Location    geoipc.Location `json:"location"`
 }
 
 func NewReport(reportCycles int, host string, args ...string) *Report {
 	report := &Report{}
+	report.Time = time.Now()
 	args = append([]string{"--report", "-c", strconv.Itoa(reportCycles), host}, args...)
 
 	tstart := time.Now()
@@ -78,6 +82,12 @@ func NewReport(reportCycles int, host string, args ...string) *Report {
 
 	report.Hops = len(report.Hosts)
 	report.ElapsedTime = time.Since(tstart)
+	loc, err := geoipc.GetLocation()
+	if err != nil {
+		report.Location = geoipc.Location{}
+	} else {
+		report.Location = loc
+	}
 
 	return report
 }
