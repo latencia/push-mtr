@@ -10,6 +10,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v1"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -53,14 +54,15 @@ func NewReport(reportCycles int, host string, args ...string) *Report {
 	scanner := bufio.NewScanner(buf)
 	scanner.Split(bufio.ScanLines)
 
-	skipHeader := 2
 	for scanner.Scan() {
-		if skipHeader != 0 {
-			skipHeader -= 1
+		r, _ := regexp.Compile(`^\s+\d+\.`)
+
+		line := scanner.Text()
+		if !r.MatchString(line) {
 			continue
 		}
 
-		tokens := strings.Fields(scanner.Text())
+		tokens := strings.Fields(line)
 		sent, err := strconv.Atoi(tokens[3])
 		if err != nil {
 			panic("Error parsing sent field")
@@ -134,6 +136,7 @@ func run(count int, host, brokerUrl, topic string, stdout bool) error {
 }
 
 func main() {
+	kingpin.Version("0.1.1")
 	count := kingpin.Flag("count", "Report cycles (mtr -c)").
 		Default("10").Int()
 
@@ -151,7 +154,6 @@ func main() {
 	stdout := kingpin.Flag("stdout", "Print the report to stdout").
 		Default("false").Bool()
 
-	kingpin.Version("0.1")
 	kingpin.Parse()
 
 	if findMtrBin() == "" {
