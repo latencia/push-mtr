@@ -1,7 +1,7 @@
 package main
 
 import (
-	mqttc "./utils/mqtt"
+	mqttc "./mqtt"
 	"bufio"
 	"bytes"
 	"encoding/json"
