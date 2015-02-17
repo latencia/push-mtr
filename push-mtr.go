@@ -118,20 +118,38 @@ func findMtrBin() string {
 	return ""
 }
 
-func run(count int, host, brokerUrl, topic string, stdout bool) error {
+func run(count int, host string, stdout bool, msg mqttc.Msg) error {
 	r := NewReport(count, host)
 
+	var err error = nil
 	if stdout {
 		msg, _ := json.MarshalIndent(r, "", "  ")
 		fmt.Println(string(msg))
-		return nil
 	} else {
-		msg, _ := json.Marshal(r)
-		err := mqttc.PushMsg("push-mtr", brokerUrl, topic, string(msg))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error sending report: %s\n", err)
-		}
-		return err
+		body, _ := json.Marshal(r)
+		msg.Body = string(body)
+		err = mqttc.PushMsg(msg)
+	}
+
+	return err
+}
+
+func parseBrokerUrls(brokerUrls string) []string {
+	tokens := strings.Split(brokerUrls, ",")
+	for i, url := range tokens {
+		tokens[i] = strings.TrimSpace(url)
+	}
+
+	return tokens
+}
+
+func handleError(err error, fail bool) {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, err.Error()+"\n")
+	}
+
+	if fail {
+		os.Exit(1)
 	}
 }
 
@@ -148,36 +166,52 @@ func main() {
 	repeat := kingpin.Flag("repeat", "Send the report every X seconds").
 		Default("0").Int()
 
-	brokerUrl := kingpin.Flag("broker-url", "MQTT broker URL").
-		Default("").String()
+	brokerUrls := kingpin.Flag("broker-urls", "Comman separated MQTT broker URLs").
+		Required().Default("").OverrideDefaultFromEnvar("MQTT_URLS").String()
 
 	stdout := kingpin.Flag("stdout", "Print the report to stdout").
 		Default("false").Bool()
 
+	cafile := kingpin.Flag("cafile", "CA certificate when using TLS (optional)").
+		String()
+
+	insecure := kingpin.Flag("insecure", "Don't verify the server's certificate chain and host name.").
+		Default("false").Bool()
+
 	kingpin.Parse()
+
+	if *cafile != "" {
+		if _, err := os.Stat(*cafile); err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading CA certificate %s", err.Error())
+			os.Exit(1)
+		}
+	}
 
 	if findMtrBin() == "" {
 		fmt.Fprintf(os.Stderr, "mtr binary not found in path\n")
 		os.Exit(1)
 	}
 
-	if *brokerUrl == "" {
-		*brokerUrl = os.Getenv("MQTT_URL")
-		if *brokerUrl == "" {
-			fmt.Fprintf(os.Stderr, "Invalid MQTT broker URL\n")
-			os.Exit(1)
-		}
+	urlList := parseBrokerUrls(*brokerUrls)
+
+	var err error
+	msg := mqttc.Msg{
+		BrokerURLs:    urlList,
+		ClientID:      "push-mtr",
+		Topic:         *topic,
+		TLSCACertPath: *cafile,
+		TLSVerify:     *insecure,
 	}
 
 	if *repeat != 0 {
 		timer := time.NewTicker(time.Duration(*repeat) * time.Second)
 		for _ = range timer.C {
-			run(*count, *host, *brokerUrl, *topic, *stdout)
+			err = run(*count, *host, *stdout, msg)
+			handleError(err, false)
 		}
 	} else {
-		err := run(*count, *host, *brokerUrl, *topic, *stdout)
-		if err != nil {
-			os.Exit(1)
-		}
+		err := run(*count, *host, *stdout, msg)
+		handleError(err, true)
 	}
+
 }

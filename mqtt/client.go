@@ -1,60 +1,74 @@
 package mqtt
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git"
+	"io/ioutil"
 	"net/url"
+	"os"
 	"time"
 )
 
+type Msg struct {
+	ClientID      string
+	BrokerURLs    []string
+	Topic         string
+	Body          string
+	TLSCACertPath string
+	TLSVerify     bool
+}
+
 // tcp://user:password@host:port
-func PushMsg(clientId, brokerUrl, topic, msg string) error {
-
-	if brokerUrl == "" {
-		panic("Invalid broker URL")
-	}
-
-	uri, _ := url.Parse(brokerUrl)
-	if uri.Scheme != "tcp" {
-		panic("Invalid broker URL scheme")
-	}
+func PushMsg(msg Msg) error {
 
 	opts := mqtt.NewClientOptions()
 	opts.SetCleanSession(true)
 	opts.SetWriteTimeout(10 * time.Second)
 
-	opts.AddBroker(fmt.Sprintf("tcp://%s", uri.Host))
-
-	if uri.User != nil {
-		user := uri.User.Username()
-		opts.SetUsername(user)
-		password, _ := uri.User.Password()
-		if password != "" {
-			opts.SetPassword(password)
+	opts.SetClientId(msg.ClientID)
+	for _, broker := range msg.BrokerURLs {
+		uri, err := url.Parse(broker)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing broker url (ignored): %s\n", broker)
+			continue
+		}
+		opts.AddBroker(broker)
+		if uri.Scheme == "ssl" {
+			tlsconfig := newTlsConfig(msg.TLSCACertPath, msg.TLSVerify)
+			opts.SetTlsConfig(tlsconfig)
 		}
 	}
-
-	opts.SetClientId(clientId)
 
 	client := mqtt.NewClient(opts)
 	_, err := client.Start()
 	if err != nil {
-		return errors.New("Error starting the MQTT Client: " + err.Error())
+		return errors.New("Connection to the broker(s) failed: " + err.Error())
 	}
+	defer client.Disconnect(0)
 
-	<-client.Publish(0, topic, msg)
-	client.Disconnect(0)
+	<-client.Publish(mqtt.QOS_ONE, msg.Topic, msg.Body)
 
 	return nil
 }
 
-func PushMsgMulti(clientId string, brokerUrls []string, topic, msg string) (string, []error) {
-	errs := make([]error, len(brokerUrls))
-	for i, broker := range brokerUrls {
-		err := PushMsg(clientId, broker, topic, msg)
-		if err == nil { return broker, nil }
-		errs[i] = err
+func newTlsConfig(cacertPath string, verify bool) *tls.Config {
+	if cacertPath == "" {
+		return &tls.Config{}
 	}
-	return "", errs
+
+	certpool := x509.NewCertPool()
+	pemCerts, err := ioutil.ReadFile(cacertPath)
+	if err != nil {
+		panic("Error reading CA certificate from " + cacertPath)
+	}
+
+	certpool.AppendCertsFromPEM(pemCerts)
+
+	return &tls.Config{
+		RootCAs:            certpool,
+		InsecureSkipVerify: verify,
+	}
 }
