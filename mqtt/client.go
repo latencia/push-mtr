@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git"
+	log "github.com/Sirupsen/logrus"
 	"io/ioutil"
 	"net/url"
 	"os"
+	"regexp"
 	"time"
 )
 
@@ -19,6 +21,25 @@ type Msg struct {
 	Body          string
 	TLSCACertPath string
 	TLSVerify     bool
+}
+
+// Test SSL connections to the brokers because the current
+// paho mqtt client implementation returns a generic error message
+// hard to debug.
+func isTLSOK(uri url.URL, config *tls.Config) bool {
+	r := regexp.MustCompile(".*:.*")
+	if !r.MatchString(uri.Host) {
+		uri.Host += ":8883"
+	}
+
+	_, err := tls.Dial("tcp", uri.Host, config)
+
+	if err != nil {
+		log.Warnf("Ignoring broker %s: %s", uri.String(), err)
+		return false
+	}
+
+	return true
 }
 
 // tcp://user:password@host:port
@@ -35,11 +56,14 @@ func PushMsg(msg Msg) error {
 			fmt.Fprintf(os.Stderr, "Error parsing broker url (ignored): %s\n", broker)
 			continue
 		}
-		opts.AddBroker(broker)
 		if uri.Scheme == "ssl" {
 			tlsconfig := newTlsConfig(msg.TLSCACertPath, msg.TLSVerify)
+			if !isTLSOK(*uri, tlsconfig) {
+				continue
+			}
 			opts.SetTlsConfig(tlsconfig)
 		}
+		opts.AddBroker(broker)
 	}
 
 	client := mqtt.NewClient(opts)
