@@ -17,10 +17,10 @@ script
     exit 1
   fi
   
-  if [ -z "$MQTT_URL" ]; then
-    echo "No broker URL defined in /etc/default/push-mtr (missing MQTT_URL='')"
+  if [ -z "$MQTT_URLS" ]; then
+    echo "No broker URL defined in /etc/default/push-mtr (missing MQTT_URLS='')"
     exit 1
   fi
 
-  exec push-mtr --broker-url $MQTT_URL --repeat 60 $HOSTS
+  exec push-mtr --broker-urls $MQTT_URLS --repeat 60 $EXTRA_ARGS $HOSTS
 end script

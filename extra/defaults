@@ -2,4 +2,5 @@
 # Both HOSTS (comma separated) and the broker URL are
 # mandatory
 HOSTS=""
-MQTT_URL=""
+MQTT_URLS=""
+EXTRA_ARGS=""
