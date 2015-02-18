@@ -154,7 +154,8 @@ func handleError(err error, fail bool) {
 }
 
 func main() {
-	kingpin.Version("0.1.1")
+	kingpin.Version("0.2")
+
 	count := kingpin.Flag("count", "Report cycles (mtr -c)").
 		Default("10").Int()
 
