@@ -1,0 +1,3 @@
+* Hability to set the country and city instead of using geoip
+* Publish to /<base-topic>/<country-code>/city so clients can filter easily without parsing the JSON
+* Would be nice to publish to /<base-topic>/<host-ip> also so we can filter using that
