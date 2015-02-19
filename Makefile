@@ -14,8 +14,7 @@ tarball:
 	mv $(PKG) $(BUILD_DIR)/$(NAME)_$(VERSION).orig.tar.gz
 
 clean:
-	rm -rf $(BUILD_DIR)
-	rm -f $(SIG)
+	rm -f push-mtr
 
 debpkg: tarball 
 	# Prevents overwriting a good tarball
