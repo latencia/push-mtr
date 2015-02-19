@@ -9,6 +9,7 @@ DEB_TARGET_DIR=$(HOME)/debian/$(NAME)
 all: build
 
 tarball:
+	rm -rf $(BUILD_DIR)
 	mkdir -p $(BUILD_DIR)
 	git archive --output=$(PKG) --prefix=$(PKG_NAME)/ HEAD
 	mv $(PKG) $(BUILD_DIR)/$(NAME)_$(VERSION).orig.tar.gz
@@ -24,7 +25,6 @@ debpkg: tarball
 	  cd $(NAME)-$(VERSION) && \
 		debuild -S && rm -rf $(BUILD_DIR)/$(NAME)-$(VERSION) && \
 		mv $(BUILD_DIR)/* $(DEB_TARGET_DIR)
-	rm -rf $(BUILD_DIR)
 
 build:
 	GOPATH=$(PWD)/vendor go build
