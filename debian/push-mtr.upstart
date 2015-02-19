@@ -1,0 +1,26 @@
+# push-mtr agent
+description "push-mtr agent"
+start on (local-filesystems and net-device-up IFACE!=lo)
+
+stop on runlevel [06]
+
+respawn
+respawn limit 10 10
+
+script
+  if [ -f "/etc/default/push-mtr" ]; then
+    . /etc/default/push-mtr
+  fi
+
+  if [ -z "$HOSTS" ]; then
+    echo "No hosts defined in /etc/default/push-mtr (missing HOSTS='')"
+    exit 1
+  fi
+  
+  if [ -z "$MQTT_URLS" ]; then
+    echo "No broker URL defined in /etc/default/push-mtr (missing MQTT_URLS='')"
+    exit 1
+  fi
+
+  exec push-mtr --broker-urls $MQTT_URLS --repeat 60 $EXTRA_ARGS $HOSTS
+end script
