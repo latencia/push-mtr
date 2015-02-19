@@ -27,7 +27,7 @@ debpkg: tarball
 		mv $(BUILD_DIR)/* $(DEB_TARGET_DIR)
 
 build:
-	GOPATH=$(PWD)/vendor go build
+	GOPATH=$(PWD)/vendor go build -o $(NAME)
 
 update-deps:
 	rm -rf vendor/src
