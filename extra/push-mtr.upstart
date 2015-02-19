@@ -1,4 +1,4 @@
-# push-mtr agent upstart config
+# push-mtr agent
 description "push-mtr agent"
 start on (local-filesystems and net-device-up IFACE!=lo)
 
