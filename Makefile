@@ -6,6 +6,8 @@ PKG_NAME=$(NAME)-$(VERSION)
 PKG=$(BUILD_DIR)/$(PKG_NAME).tar.gz
 DEB_TARGET_DIR=$(HOME)/debian/$(NAME)
 
+all: build
+
 tarball:
 	mkdir -p $(BUILD_DIR)
 	git archive --output=$(PKG) --prefix=$(PKG_NAME)/ HEAD
