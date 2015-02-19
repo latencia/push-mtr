@@ -6,6 +6,8 @@ PKG_NAME=$(NAME)-$(VERSION)
 PKG=$(BUILD_DIR)/$(PKG_NAME).tar.gz
 DEB_TARGET_DIR=$(HOME)/debian/$(NAME)
 
+all: build
+
 tarball:
 	mkdir -p $(BUILD_DIR)
 	git archive --output=$(PKG) --prefix=$(PKG_NAME)/ HEAD
@@ -25,4 +27,12 @@ debpkg: tarball
 		mv $(BUILD_DIR)/* $(DEB_TARGET_DIR)
 	rm -rf $(BUILD_DIR)
 
-.PHONY: test
+build:
+	GOPATH=$(PWD)/vendor go build
+
+update-deps:
+	rm -rf vendor/src
+	GOPATH=$(PWD)/vendor go get
+	rm -rf vendor/pkg
+	find vendor/src -type d -name '.git' -o -name '.hg' | xargs rm -rf
+	find vendor/src -type f -name '.gitignore' -o -name '.hgignore' | xargs rm
