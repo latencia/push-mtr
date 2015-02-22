@@ -205,7 +205,7 @@ func main() {
 	if *country != "" {
 		loc := countryLoc(*country)
 		if loc == nil {
-			log.Fatal("Country %s not found!", country)
+			log.Fatalf("Country %s not found!", country)
 			os.Exit(1)
 		}
 	}
