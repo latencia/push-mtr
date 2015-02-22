@@ -4,10 +4,10 @@ import (
 	mqttc "./mqttc"
 	"bufio"
 	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+	"github.com/grindhold/gominatim"
 	geoipc "github.com/rubiojr/freegeoip-client"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"os"
@@ -36,20 +36,36 @@ type Report struct {
 	Hosts       []*Host         `json:"hosts"`
 	Hops        int             `json:"hops"`
 	ElapsedTime time.Duration   `json:"elapsed_time"`
-	Location    geoipc.Location `json:"location"`
+	Location    *ReportLocation `json:"location"`
+}
+
+// slightly simpler struct than the one provided by geoipc
+type ReportLocation struct {
+	IP          string  `json:"ip"`
+	CountryCode string  `json:"country_code"`
+	CountryName string  `json:"country_name"`
+	City        string  `json:"city"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
 }
 
 func NewReport(reportCycles int, host string, args ...string) *Report {
 	loc, err := geoipc.GetLocation()
 	if err != nil {
-		log.Errorf("Error getting location from geoip server: %s", err)
-		loc = geoipc.Location{}
+		log.Panicf("Error getting location from geoip server: %s", err)
 	}
 
-	return NewReportWithLoc(reportCycles, host, &loc, args...)
+	l := ReportLocation{
+		CountryCode: loc.CountryCode,
+		CountryName: loc.CountryName,
+		Latitude:    loc.Latitude,
+		Longitude:   loc.Longitude,
+		IP:          loc.IP,
+	}
+	return NewReportWithLoc(reportCycles, host, &l, args...)
 }
 
-func NewReportWithLoc(reportCycles int, host string, loc *geoipc.Location, args ...string) *Report {
+func NewReportWithLoc(reportCycles int, host string, loc *ReportLocation, args ...string) *Report {
 	report := &Report{}
 	report.Time = time.Now()
 	args = append([]string{"--report", "-n", "-c", strconv.Itoa(reportCycles), host}, args...)
@@ -97,7 +113,7 @@ func NewReportWithLoc(reportCycles int, host string, loc *geoipc.Location, args 
 
 	report.Hops = len(report.Hosts)
 	report.ElapsedTime = time.Since(tstart)
-	report.Location = *loc
+	report.Location = loc
 
 	return report
 }
@@ -125,8 +141,7 @@ func findMtrBin() string {
 	return ""
 }
 
-func run(count int, host string, stdout bool, args *mqttc.Args) error {
-	r := NewReport(count, host)
+func run(r *Report, count int, host string, stdout bool, args *mqttc.Args) error {
 
 	var err error = nil
 	if stdout {
@@ -182,7 +197,7 @@ func main() {
 	cafile := kingpin.Flag("cafile", "CA certificate when using TLS (optional)").
 		String()
 
-	country := kingpin.Flag("country", "Force country (2 letter country code)").
+	location := kingpin.Flag("location", "Geocode the location of the server").
 		String()
 
 	insecure := kingpin.Flag("insecure", "Don't verify the server's certificate chain and host name.").
@@ -202,12 +217,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *country != "" {
-		loc := countryLoc(*country)
-		if loc == nil {
-			log.Fatalf("Country %s not found!", country)
+	var report *Report
+	if *location != "" {
+		loc, err := findLocation(*location)
+		if err != nil {
+			log.Fatalf("Geocoding of location %s failed: %s", *location, err)
 			os.Exit(1)
 		}
+		report = NewReportWithLoc(*count, *host, loc)
+	} else {
+		report = NewReport(*count, *host)
 	}
 
 	urlList := parseBrokerUrls(*brokerUrls)
@@ -224,38 +243,74 @@ func main() {
 	if *repeat != 0 {
 		timer := time.NewTicker(time.Duration(*repeat) * time.Second)
 		for _ = range timer.C {
-			err = run(*count, *host, *stdout, &args)
+			err = run(report, *count, *host, *stdout, &args)
 			handleError(err, false)
 		}
 	} else {
-		err := run(*count, *host, *stdout, &args)
+		err := run(report, *count, *host, *stdout, &args)
 		handleError(err, true)
 	}
 
 }
 
-func countryLoc(code string) *geoipc.Location {
-	asset, err := Asset("data/countries.csv")
-	if err != nil {
-		log.Panicf("Error reading country data: %s", err)
-	}
+func findLocation(query string) (*ReportLocation, error) {
 
-	buf := bytes.NewBuffer(asset)
-	reader := csv.NewReader(buf)
-	records, err := reader.ReadAll()
-	for _, rec := range records {
-		if rec[0] == strings.ToUpper(code) {
-			lat, _ := strconv.ParseFloat(rec[1], 32)
-			lon, _ := strconv.ParseFloat(rec[2], 32)
-			loc := &geoipc.Location{
-				CountryCode: strings.ToLower(code),
-				CountryName: rec[3],
-				Latitude:    lat,
-				Longitude:   lon,
+	gominatim.SetServer("https://nominatim.openstreetmap.org/")
+
+	iplocChan := make(chan geoipc.Location)
+	go func() {
+		// retry once
+		for i := 0; i < 2; i++ {
+			loc, err := geoipc.GetLocation()
+			if err == nil {
+				iplocChan <- loc
+				break
 			}
-			return loc
+			time.Sleep(2 * time.Second)
 		}
+		close(iplocChan)
+	}()
+
+	gomiChan := make(chan []gominatim.SearchResult)
+	go func(query string) {
+		qry := gominatim.SearchQuery{
+			Q:              query,
+			Addressdetails: true,
+			Limit:          1,
+		}
+		for i := 0; i < 2; i++ {
+			r, err := qry.Get()
+			if err == nil {
+				gomiChan <- r
+				break
+			}
+			time.Sleep(2 * time.Second)
+		}
+		close(gomiChan)
+	}(query)
+
+	iploc := <-iplocChan
+	responses := <-gomiChan
+
+	if (iploc == geoipc.Location{}) && len(responses) == 0 {
+		return nil, fmt.Errorf("No locations found for '%s'", query)
 	}
 
-	return nil
+	if len(responses) > 0 {
+		resp := responses[0]
+		addr := resp.Address
+		lat, _ := strconv.ParseFloat(resp.Lat, 64)
+		lon, _ := strconv.ParseFloat(resp.Lon, 64)
+		loc := ReportLocation{
+			CountryCode: addr.CountryCode,
+			CountryName: addr.Country,
+			City:        addr.City,
+			Latitude:    lat,
+			Longitude:   lon,
+			IP:          iploc.IP,
+		}
+		return &loc, nil
+	} else {
+		return nil, fmt.Errorf("Geocoding %s failed", query)
+	}
 }
