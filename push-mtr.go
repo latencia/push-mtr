@@ -1,11 +1,13 @@
 package main
 
 import (
-	mqttc "./mqtt"
+	mqttc "./mqttc"
 	"bufio"
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	log "github.com/Sirupsen/logrus"
 	geoipc "github.com/rubiojr/freegeoip-client"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"os"
@@ -38,6 +40,16 @@ type Report struct {
 }
 
 func NewReport(reportCycles int, host string, args ...string) *Report {
+	loc, err := geoipc.GetLocation()
+	if err != nil {
+		log.Errorf("Error getting location from geoip server: %s", err)
+		loc = geoipc.Location{}
+	}
+
+	return NewReportWithLoc(reportCycles, host, &loc, args...)
+}
+
+func NewReportWithLoc(reportCycles int, host string, loc *geoipc.Location, args ...string) *Report {
 	report := &Report{}
 	report.Time = time.Now()
 	args = append([]string{"--report", "-n", "-c", strconv.Itoa(reportCycles), host}, args...)
@@ -85,12 +97,7 @@ func NewReport(reportCycles int, host string, args ...string) *Report {
 
 	report.Hops = len(report.Hosts)
 	report.ElapsedTime = time.Since(tstart)
-	loc, err := geoipc.GetLocation()
-	if err != nil {
-		report.Location = geoipc.Location{}
-	} else {
-		report.Location = loc
-	}
+	report.Location = *loc
 
 	return report
 }
@@ -118,7 +125,7 @@ func findMtrBin() string {
 	return ""
 }
 
-func run(count int, host string, stdout bool, msg mqttc.Msg) error {
+func run(count int, host string, stdout bool, args *mqttc.Args) error {
 	r := NewReport(count, host)
 
 	var err error = nil
@@ -126,9 +133,8 @@ func run(count int, host string, stdout bool, msg mqttc.Msg) error {
 		msg, _ := json.MarshalIndent(r, "", "  ")
 		fmt.Println(string(msg))
 	} else {
-		body, _ := json.Marshal(r)
-		msg.Body = string(body)
-		err = mqttc.PushMsg(msg)
+		msg, _ := json.Marshal(r)
+		err = mqttc.PushMsg(string(msg), args)
 	}
 
 	return err
@@ -176,6 +182,9 @@ func main() {
 	cafile := kingpin.Flag("cafile", "CA certificate when using TLS (optional)").
 		String()
 
+	country := kingpin.Flag("country", "Force country (2 letter country code)").
+		String()
+
 	insecure := kingpin.Flag("insecure", "Don't verify the server's certificate chain and host name.").
 		Default("false").Bool()
 
@@ -193,26 +202,60 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *country != "" {
+		loc := countryLoc(*country)
+		if loc == nil {
+			log.Fatal("Country %s not found!", country)
+			os.Exit(1)
+		}
+	}
+
 	urlList := parseBrokerUrls(*brokerUrls)
 
 	var err error
-	msg := mqttc.Msg{
+	args := mqttc.Args{
 		BrokerURLs:    urlList,
 		ClientID:      "push-mtr",
 		Topic:         *topic,
 		TLSCACertPath: *cafile,
-		TLSVerify:     *insecure,
+		TLSSkipVerify: *insecure,
 	}
 
 	if *repeat != 0 {
 		timer := time.NewTicker(time.Duration(*repeat) * time.Second)
 		for _ = range timer.C {
-			err = run(*count, *host, *stdout, msg)
+			err = run(*count, *host, *stdout, &args)
 			handleError(err, false)
 		}
 	} else {
-		err := run(*count, *host, *stdout, msg)
+		err := run(*count, *host, *stdout, &args)
 		handleError(err, true)
 	}
 
+}
+
+func countryLoc(code string) *geoipc.Location {
+	asset, err := Asset("data/countries.csv")
+	if err != nil {
+		log.Panicf("Error reading country data: %s", err)
+	}
+
+	buf := bytes.NewBuffer(asset)
+	reader := csv.NewReader(buf)
+	records, err := reader.ReadAll()
+	for _, rec := range records {
+		if rec[0] == strings.ToUpper(code) {
+			lat, _ := strconv.ParseFloat(rec[1], 32)
+			lon, _ := strconv.ParseFloat(rec[2], 32)
+			loc := &geoipc.Location{
+				CountryCode: strings.ToLower(code),
+				CountryName: rec[3],
+				Latitude:    lat,
+				Longitude:   lon,
+			}
+			return loc
+		}
+	}
+
+	return nil
 }
