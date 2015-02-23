@@ -49,23 +49,7 @@ type ReportLocation struct {
 	Longitude   float64 `json:"longitude"`
 }
 
-func NewReport(reportCycles int, host string, args ...string) *Report {
-	loc, err := geoipc.GetLocation()
-	if err != nil {
-		log.Panicf("Error getting location from geoip server: %s", err)
-	}
-
-	l := ReportLocation{
-		CountryCode: loc.CountryCode,
-		CountryName: loc.CountryName,
-		Latitude:    loc.Latitude,
-		Longitude:   loc.Longitude,
-		IP:          loc.IP,
-	}
-	return NewReportWithLoc(reportCycles, host, &l, args...)
-}
-
-func NewReportWithLoc(reportCycles int, host string, loc *ReportLocation, args ...string) *Report {
+func NewReport(reportCycles int, host string, loc *ReportLocation, args ...string) *Report {
 	report := &Report{}
 	report.Time = time.Now()
 	args = append([]string{"--report", "-n", "-c", strconv.Itoa(reportCycles), host}, args...)
@@ -217,21 +201,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	var report *Report
-	if *location != "" {
-		loc, err := findLocation(*location)
-		if err != nil {
-			log.Fatalf("Geocoding of location %s failed: %s", *location, err)
-			os.Exit(1)
-		}
-		report = NewReportWithLoc(*count, *host, loc)
-	} else {
-		report = NewReport(*count, *host)
+	loc, err := findLocation(*location)
+	if err != nil {
+		log.Fatalf("Geocoding of location %s failed: %s", *location, err)
+		os.Exit(1)
 	}
+	report := NewReport(*count, *host, loc)
 
 	urlList := parseBrokerUrls(*brokerUrls)
 
-	var err error
 	args := mqttc.Args{
 		BrokerURLs:    urlList,
 		ClientID:      "push-mtr",
@@ -253,16 +231,21 @@ func main() {
 
 }
 
-func findLocation(query string) (*ReportLocation, error) {
-
-	gominatim.SetServer("https://nominatim.openstreetmap.org/")
-
-	iplocChan := make(chan geoipc.Location)
+func geoipLoc() chan ReportLocation {
+	iplocChan := make(chan ReportLocation)
 	go func() {
 		// retry once
 		for i := 0; i < 2; i++ {
-			loc, err := geoipc.GetLocation()
+			res, err := geoipc.GetLocation()
 			if err == nil {
+				loc := ReportLocation{
+					CountryCode: strings.ToLower(res.CountryCode), // normalize code
+					CountryName: res.CountryName,
+					City:        res.City,
+					Latitude:    res.Latitude,
+					Longitude:   res.Longitude,
+					IP:          res.IP,
+				}
 				iplocChan <- loc
 				break
 			}
@@ -271,46 +254,64 @@ func findLocation(query string) (*ReportLocation, error) {
 		close(iplocChan)
 	}()
 
-	gomiChan := make(chan []gominatim.SearchResult)
+	return iplocChan
+}
+
+func nominatimLoc(query string) chan ReportLocation {
+	gominatim.SetServer("https://nominatim.openstreetmap.org/")
+
+	ch := make(chan ReportLocation, 1)
 	go func(query string) {
 		qry := gominatim.SearchQuery{
 			Q:              query,
 			Addressdetails: true,
 			Limit:          1,
+			AcceptLanguage: "en-US",
 		}
+
 		for i := 0; i < 2; i++ {
-			r, err := qry.Get()
-			if err == nil {
-				gomiChan <- r
+			res, err := qry.Get()
+			if err == nil && len(res) > 0 {
+				res1 := res[0]
+				lat, _ := strconv.ParseFloat(res1.Lat, 64)
+				lon, _ := strconv.ParseFloat(res1.Lon, 64)
+				loc := ReportLocation{
+					CountryCode: res1.Address.CountryCode,
+					CountryName: res1.Address.Country,
+					City:        res1.Address.City,
+					Latitude:    lat,
+					Longitude:   lon,
+				}
+				ch <- loc
 				break
 			}
 			time.Sleep(2 * time.Second)
 		}
-		close(gomiChan)
+		close(ch)
 	}(query)
 
-	iploc := <-iplocChan
-	responses := <-gomiChan
+	return ch
+}
 
-	if (iploc == geoipc.Location{}) && len(responses) == 0 {
-		return nil, fmt.Errorf("No locations found for '%s'", query)
-	}
+func findLocation(query string) (*ReportLocation, error) {
 
-	if len(responses) > 0 {
-		resp := responses[0]
-		addr := resp.Address
-		lat, _ := strconv.ParseFloat(resp.Lat, 64)
-		lon, _ := strconv.ParseFloat(resp.Lon, 64)
-		loc := ReportLocation{
-			CountryCode: addr.CountryCode,
-			CountryName: addr.Country,
-			City:        addr.City,
-			Latitude:    lat,
-			Longitude:   lon,
-			IP:          iploc.IP,
-		}
+	if query == "" {
+
+		chan1 := geoipLoc()
+		loc := <-chan1
 		return &loc, nil
+
 	} else {
-		return nil, fmt.Errorf("Geocoding %s failed", query)
+
+		chan1 := geoipLoc()
+		chan2 := nominatimLoc(query)
+
+		iploc := <-chan1
+		nominatimLoc := <-chan2
+
+		nominatimLoc.IP = iploc.IP
+
+		return &nominatimLoc, nil
 	}
+
 }
