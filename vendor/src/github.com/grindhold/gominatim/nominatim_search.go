@@ -91,7 +91,6 @@ func (q *SearchQuery) buildQuery() (string, error) {
 	}
 	if q.AcceptLanguage != "" {
 		s += "&accept-language=" + url.QueryEscape(q.AcceptLanguage)
-		print(s)
 	}
 	if q.Q != "" {
 		s += "&q=" + url.QueryEscape(q.Q)
@@ -188,7 +187,6 @@ func (q *SearchQuery) buildQuery() (string, error) {
 	} else {
 		s += "&polygon_text=0"
 	}
-	println(s)
 	return s, nil
 }
 
