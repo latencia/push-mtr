@@ -18,8 +18,6 @@ clean:
 	rm -f push-mtr
 
 debpkg: tarball 
-	# Prevents overwriting a good tarball
-	! test -f $(DEB_TARGET_DIR)/$(NAME)_$(VERSION).orig.tar.gz
 	cd $(BUILD_DIR) && \
 		tar xzf $(NAME)_$(VERSION).orig.tar.gz && \
 	  cd $(NAME)-$(VERSION) && \

@@ -1,3 +1,9 @@
+push-mtr (0.2.1-0rbel1) trusty; urgency=medium
+
+  * Fix package deps
+
+ -- Sergio Rubio <rubiojr@frameos.org>  Sat, 28 Feb 2015 22:13:52 +0100
+
 push-mtr (0.2.1-0rbel) trusty; urgency=medium
 
   * 0.2.1
