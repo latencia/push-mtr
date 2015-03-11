@@ -10,6 +10,7 @@ Standards-Version: 3.9.2
 
 Package: push-mtr
 Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Built-Using: ${misc:Built-Using}
 Description: Push mtr reports via MQTT
  Send mtr reports to MQTT brokers.

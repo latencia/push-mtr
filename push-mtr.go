@@ -159,7 +159,7 @@ func handleError(err error, fail bool) {
 }
 
 func main() {
-	kingpin.Version("0.2.1")
+	kingpin.Version(PKG_VERSION)
 
 	count := kingpin.Flag("count", "Report cycles (mtr -c)").
 		Default("10").Int()
