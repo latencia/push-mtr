@@ -24,8 +24,8 @@ type Host struct {
 	Hop         int     `json:"hop-number"`
 	Sent        int     `json:"sent"`
 	LostPercent float64 `json:"lost-percent"`
-	Last        float64 `json:"mean"`
-	Avg         float64 `json:"mean"`
+	Last        float64 `json:"last"`
+	Avg         float64 `json:"avg"`
 	Best        float64 `json:"best"`
 	Worst       float64 `json:"worst"`
 	StDev       float64 `json:"standard-dev"`
