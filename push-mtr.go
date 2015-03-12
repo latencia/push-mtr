@@ -125,7 +125,8 @@ func findMtrBin() string {
 	return ""
 }
 
-func run(r *Report, count int, host string, stdout bool, args *mqttc.Args) error {
+func run(count int, host string, loc *ReportLocation, stdout bool, args *mqttc.Args) error {
+	r := NewReport(count, host, loc)
 
 	var err error = nil
 	if stdout {
@@ -206,7 +207,6 @@ func main() {
 		log.Fatalf("Geocoding of location %s failed: %s", *location, err)
 		os.Exit(1)
 	}
-	report := NewReport(*count, *host, loc)
 
 	urlList := parseBrokerUrls(*brokerUrls)
 
@@ -221,11 +221,11 @@ func main() {
 	if *repeat != 0 {
 		timer := time.NewTicker(time.Duration(*repeat) * time.Second)
 		for _ = range timer.C {
-			err = run(report, *count, *host, *stdout, &args)
+			err = run(*count, *host, loc, *stdout, &args)
 			handleError(err, false)
 		}
 	} else {
-		err := run(report, *count, *host, *stdout, &args)
+		err := run(*count, *host, loc, *stdout, &args)
 		handleError(err, true)
 	}
 
