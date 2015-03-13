@@ -65,6 +65,7 @@ func NewReport(reportCycles int, host string, loc *ReportLocation, args ...strin
 	buf := bytes.NewBuffer(rawOutput)
 	scanner := bufio.NewScanner(buf)
 	scanner.Split(bufio.ScanLines)
+	hopCount := 0
 
 	for scanner.Scan() {
 		r, _ := regexp.Compile(`^\s+\d+\.`)
@@ -80,9 +81,11 @@ func NewReport(reportCycles int, host string, loc *ReportLocation, args ...strin
 			panic("Error parsing sent field")
 		}
 
+		hopCount += 1
 		host := Host{
 			IP:   tokens[1],
 			Sent: sent,
+			Hop: hopCount,
 		}
 
 		f2F(strings.Replace(tokens[2], "%", "", -1), &host.LostPercent)
