@@ -188,7 +188,28 @@ func main() {
 	insecure := kingpin.Flag("insecure", "Don't verify the server's certificate chain and host name.").
 		Default("false").Bool()
 
+	debug := kingpin.Flag("debug", "Print debugging messages").
+		Default("false").Bool()
+
+	clientID := kingpin.Flag("clientid", "Use a custom MQTT client ID").String()
+
 	kingpin.Parse()
+
+	log.Info("Starting push-mtr")
+
+	var err error
+
+	if *debug {
+		log.SetLevel(log.DebugLevel)
+	}
+
+	if *clientID == "" {
+		*clientID, err = os.Hostname()
+		if err != nil {
+			log.Fatal("Can't get the hostname to use it as the ClientID, use --clientid option")
+		}
+	}
+	log.Debugf("MQTT Client ID: %s", *clientID)
 
 	if *cafile != "" {
 		if _, err := os.Stat(*cafile); err != nil {
@@ -212,7 +233,7 @@ func main() {
 
 	args := mqttc.Args{
 		BrokerURLs:    urlList,
-		ClientID:      "push-mtr",
+		ClientID:      *clientID,
 		Topic:         *topic,
 		TLSCACertPath: *cafile,
 		TLSSkipVerify: *insecure,
