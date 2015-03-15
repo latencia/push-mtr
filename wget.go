@@ -13,11 +13,11 @@ import (
 )
 
 type WgetResult struct {
-	TimeStart   time.Time
-	HTMLTime    int64
-	TotalTime   int64
-	Bytes       int64
-	DownloadDir string
+	TimeStart   time.Time `json:"time"`
+	HTMLTime    int64     `json:"int"`
+	TotalTime   int64     `json:"int"`
+	Bytes       int64     `json:"int"`
+	DownloadDir string    `json"string"`
 }
 
 func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChannel) error {
