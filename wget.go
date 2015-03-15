@@ -26,7 +26,7 @@ func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChann
 
 	fout, err := os.Create(filename)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error creating temp file: %s\n", err)
 	}
 	asset.(browser.Downloadable).DownloadAsync(fout, *ch)
 
@@ -40,14 +40,13 @@ func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChann
 //
 // Setting clean to true removes downloadDir after the assets have
 // been downloaded.
-func Wget(url string, downloadDir string, clean bool) (res WgetResult) {
+func Wget(url string, downloadDir string, clean bool) (res WgetResult, err error) {
 
 	bow := surf.NewBrowser()
 	res.TimeStart = time.Now()
 
-	err := bow.Open(url)
-	if err != nil {
-		panic(err)
+	if err = bow.Open(url); err != nil {
+		return WgetResult{}, fmt.Errorf("Error opening URL: %s\n", err)
 	}
 
 	// time it takes to download the HTML
@@ -60,15 +59,11 @@ func Wget(url string, downloadDir string, clean bool) (res WgetResult) {
 	totalAssets := len(images) + len(css) + len(scripts)
 
 	if downloadDir == "" {
-		res.DownloadDir, err = ioutil.TempDir(downloadDir, "")
-		defer func() {
-			if clean {
-				fmt.Println("foooo")
-				os.RemoveAll(res.DownloadDir)
-			}
-		}()
-		if err != nil {
-			panic("Wget: Error creating tempdir")
+		if res.DownloadDir, err = ioutil.TempDir(downloadDir, ""); err != nil {
+			return WgetResult{}, fmt.Errorf("Wget: Error creating tempdir: %s\n", err)
+		}
+		if clean {
+			defer os.RemoveAll(res.DownloadDir)
 		}
 	} else {
 		res.DownloadDir = downloadDir
@@ -102,7 +97,7 @@ func Wget(url string, downloadDir string, clean bool) (res WgetResult) {
 	log.Debugf("Assets downloaded: %d", totalAssets)
 	log.Debugf("Time to URL %s, %0.3f\n", url, float64(ttURL)/float64(time.Second))
 
-	return res
+	return res, nil
 }
 
 //func main() {
