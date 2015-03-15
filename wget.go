@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/headzoo/surf"
@@ -20,6 +21,20 @@ type WgetResult struct {
 	DownloadDir  string    `json"string"`
 	LinkedAssets int       `json:"linked_assets"`
 	URL          string    `json:"url"`
+}
+
+func urlGet(url string, topic string) (err error) {
+	var testResult WgetResult
+
+	if testResult, err = wget(url, "", true); err != nil {
+		return fmt.Errorf("Error getting download URL metrics: %s\n", err)
+	}
+
+	msg, _ := json.MarshalIndent(testResult, "", "  ")
+	log.Debugf("Sending URL Get report to %s", topic)
+	pushMsg(topic, string(msg))
+
+	return nil
 }
 
 func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChannel) error {
@@ -42,11 +57,11 @@ func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChann
 //
 // Setting clean to true removes downloadDir after the assets have
 // been downloaded.
-func Wget(url string, downloadDir string, clean bool) (res WgetResult, err error) {
+func wget(url string, downloadDir string, clean bool) (res WgetResult, err error) {
+	bow := surf.NewBrowser()
 
 	res.URL = url
 	res.TimeStart = time.Now()
-	bow := surf.NewBrowser()
 
 	if err = bow.Open(url); err != nil {
 		return WgetResult{}, fmt.Errorf("Error opening URL: %s\n", err)
@@ -55,7 +70,7 @@ func Wget(url string, downloadDir string, clean bool) (res WgetResult, err error
 	// time it takes to download the HTML
 	res.HTMLTime = time.Since(res.TimeStart).Nanoseconds()
 
-	images := bow.Images()[:]
+	images := bow.Images()
 	css := bow.Stylesheets()
 	scripts := bow.Scripts()
 	downloadChannel := make(browser.AsyncDownloadChannel, 1)
@@ -102,7 +117,3 @@ func Wget(url string, downloadDir string, clean bool) (res WgetResult, err error
 
 	return res, nil
 }
-
-//func main() {
-//	fmt.Println(Wget("https://github.com", "", true))
-//}
