@@ -1,21 +1,31 @@
 package main
 
 import (
-	mqttc "./mqttc"
 	"bufio"
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"git.eclipse.org/gitroot/paho/org.eclipse.paho.mqtt.golang.git"
 	log "github.com/Sirupsen/logrus"
 	"github.com/grindhold/gominatim"
 	geoipc "github.com/rubiojr/freegeoip-client"
 	"gopkg.in/alecthomas/kingpin.v1"
+	"io/ioutil"
+	"net/http"
+	_ "net/http/pprof"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+)
+
+var (
+	mqttClient *mqtt.MqttClient
 )
 
 type Host struct {
@@ -85,7 +95,7 @@ func NewReport(reportCycles int, host string, loc *ReportLocation, args ...strin
 		host := Host{
 			IP:   tokens[1],
 			Sent: sent,
-			Hop: hopCount,
+			Hop:  hopCount,
 		}
 
 		f2F(strings.Replace(tokens[2], "%", "", -1), &host.LostPercent)
@@ -128,16 +138,31 @@ func findMtrBin() string {
 	return ""
 }
 
-func run(count int, host string, loc *ReportLocation, stdout bool, args *mqttc.Args) error {
+func urlGet(url string, topic string) (err error) {
+	var testResult WgetResult
+
+	if testResult, err = Wget(url, "", true); err != nil {
+		return fmt.Errorf("Error getting download URL metrics: %s\n", err)
+	}
+	fmt.Println(testResult)
+
+	msg, _ := json.MarshalIndent(testResult, "", "  ")
+	log.Debugf("Sending URL Get report to %s", topic)
+	fmt.Println(string(msg))
+	pushMsg(topic, string(msg))
+
+	return nil
+}
+
+func run(count int, host string, loc *ReportLocation, stdout bool, topic string) (err error) {
 	r := NewReport(count, host, loc)
 
-	var err error = nil
 	if stdout {
 		msg, _ := json.MarshalIndent(r, "", "  ")
 		fmt.Println(string(msg))
 	} else {
 		msg, _ := json.Marshal(r)
-		err = mqttc.PushMsg(string(msg), args)
+		pushMsg(topic, string(msg))
 	}
 
 	return err
@@ -171,6 +196,9 @@ func main() {
 	topic := kingpin.Flag("topic", "MTTQ topic").Default("/metrics/mtr").
 		String()
 
+	urlGetTopic := kingpin.Flag("url-get-topic", "MTTQ topic").Default("/metrics/url-get").
+		String()
+
 	host := kingpin.Arg("host", "Target host").Required().String()
 
 	repeat := kingpin.Flag("repeat", "Send the report every X seconds").
@@ -196,6 +224,8 @@ func main() {
 
 	clientID := kingpin.Flag("clientid", "Use a custom MQTT client ID").String()
 
+	furlGet := kingpin.Flag("url-get", "Report URL GET metrics").String()
+
 	kingpin.Parse()
 
 	log.Info("Starting push-mtr")
@@ -205,6 +235,10 @@ func main() {
 	if *debug {
 		log.SetLevel(log.DebugLevel)
 	}
+
+	go func() {
+		fmt.Println(http.ListenAndServe("0.0.0.0:6161", nil))
+	}()
 
 	if *clientID == "" {
 		*clientID, err = os.Hostname()
@@ -233,26 +267,91 @@ func main() {
 	}
 
 	urlList := parseBrokerUrls(*brokerUrls)
+	tlsConfig := newTlsConfig(*cafile, *insecure)
+	mqttClient, err = newMqttClient(urlList, clientID, tlsConfig)
 
-	args := mqttc.Args{
-		BrokerURLs:    urlList,
-		ClientID:      *clientID,
-		Topic:         *topic,
-		TLSCACertPath: *cafile,
-		TLSSkipVerify: *insecure,
+	errorChan := make(chan error)
+	runUrlGet := func(scheme *string, host *string) {
+		if *scheme != "" {
+			go func() {
+				if err := urlGet(*scheme+"://"+*host, *urlGetTopic); err != nil {
+					errorChan <- err
+				}
+			}()
+			select {
+			case err := <-errorChan:
+				log.Error(err)
+			default:
+			}
+		}
 	}
 
 	if *repeat != 0 {
 		timer := time.NewTicker(time.Duration(*repeat) * time.Second)
 		for _ = range timer.C {
-			err = run(*count, *host, loc, *stdout, &args)
+			runUrlGet(furlGet, host)
+			err = run(*count, *host, loc, *stdout, *topic)
 			handleError(err, false)
 		}
 	} else {
-		err := run(*count, *host, loc, *stdout, &args)
+		runUrlGet(furlGet, host)
+		err := run(*count, *host, loc, *stdout, *topic)
 		handleError(err, true)
 	}
+}
 
+func pushMsg(topic, msg string) {
+	<-mqttClient.Publish(mqtt.QOS_ONE, topic, msg)
+}
+
+// tcp://user:password@host:port
+func newMqttClient(brokerUrls []string, clientID *string, tlsConfig *tls.Config) (*mqtt.MqttClient, error) {
+
+	opts := mqtt.NewClientOptions()
+	opts.SetCleanSession(true)
+	opts.SetWriteTimeout(10 * time.Second)
+
+	opts.SetClientId(*clientID)
+	for _, broker := range brokerUrls {
+		uri, err := url.Parse(broker)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing broker url (ignored): %s\n", broker)
+			continue
+		}
+		if uri.Scheme == "ssl" {
+			if !isTLSOK(uri, tlsConfig) {
+				continue
+			}
+			opts.SetTlsConfig(tlsConfig)
+		}
+		opts.AddBroker(broker)
+	}
+
+	client := mqtt.NewClient(opts)
+	_, err := client.Start()
+	if err != nil {
+		return &mqtt.MqttClient{}, fmt.Errorf("Connection to the broker(s) failed: %s", err)
+	}
+	return client, nil
+}
+
+func newTlsConfig(cacertPath string, verify bool) *tls.Config {
+	if cacertPath == "" {
+		return &tls.Config{}
+	}
+
+	certpool := x509.NewCertPool()
+	pemCerts, err := ioutil.ReadFile(cacertPath)
+	if err != nil {
+		panic("Error reading CA certificate from " + cacertPath)
+	}
+
+	certpool.AppendCertsFromPEM(pemCerts)
+
+	return &tls.Config{
+		RootCAs:            certpool,
+		InsecureSkipVerify: verify,
+	}
 }
 
 func geoipLoc() chan ReportLocation {
@@ -338,4 +437,18 @@ func findLocation(query string) (*ReportLocation, error) {
 		return &nominatimLoc, nil
 	}
 
+}
+
+// Test SSL connections to the brokers because the current
+// paho mqtt client implementation returns a generic error message
+// hard to debug.
+func isTLSOK(uri *url.URL, config *tls.Config) bool {
+	_, err := tls.Dial("tcp", uri.Host, config)
+
+	if err != nil {
+		log.Warnf("Ignoring broker %s: %s", uri.String(), err)
+		return false
+	}
+
+	return true
 }

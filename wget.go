@@ -13,11 +13,13 @@ import (
 )
 
 type WgetResult struct {
-	TimeStart   time.Time `json:"time"`
-	HTMLTime    int64     `json:"int"`
-	TotalTime   int64     `json:"int"`
-	Bytes       int64     `json:"int"`
-	DownloadDir string    `json"string"`
+	TimeStart    time.Time `json:"time_start"`
+	HTMLTime     int64     `json:"html_time"`
+	TotalTime    int64     `json:"total_time"`
+	Bytes        int64     `json:"bytes"`
+	DownloadDir  string    `json"string"`
+	LinkedAssets int       `json:"linked_assets"`
+	URL          string    `json:"url"`
 }
 
 func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChannel) error {
@@ -42,21 +44,22 @@ func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChann
 // been downloaded.
 func Wget(url string, downloadDir string, clean bool) (res WgetResult, err error) {
 
-	bow := surf.NewBrowser()
+	res.URL = url
 	res.TimeStart = time.Now()
+	bow := surf.NewBrowser()
 
 	if err = bow.Open(url); err != nil {
 		return WgetResult{}, fmt.Errorf("Error opening URL: %s\n", err)
 	}
 
 	// time it takes to download the HTML
-	ttURL := time.Since(res.TimeStart)
+	res.HTMLTime = time.Since(res.TimeStart).Nanoseconds()
 
-	images := bow.Images()
+	images := bow.Images()[:]
 	css := bow.Stylesheets()
 	scripts := bow.Scripts()
-	downloadChannel := make(browser.AsyncDownloadChannel)
-	totalAssets := len(images) + len(css) + len(scripts)
+	downloadChannel := make(browser.AsyncDownloadChannel, 1)
+	res.LinkedAssets = len(images) + len(css) + len(scripts)
 
 	if downloadDir == "" {
 		if res.DownloadDir, err = ioutil.TempDir(downloadDir, ""); err != nil {
@@ -82,7 +85,7 @@ func Wget(url string, downloadDir string, clean bool) (res WgetResult, err error
 	}
 
 	// Now we wait for each download to complete.
-	for i := 0; i < totalAssets; i++ {
+	for i := 0; i < res.LinkedAssets; i++ {
 		result := <-downloadChannel
 		if result.Error != nil {
 			log.Errorf("Error download '%s'. %s\n", result.Asset.Url(), result.Error)
@@ -94,8 +97,8 @@ func Wget(url string, downloadDir string, clean bool) (res WgetResult, err error
 
 	res.TotalTime = time.Since(res.TimeStart).Nanoseconds()
 	log.Debugf("Total time: %0.3f\n", float64(res.TotalTime)/float64(time.Second))
-	log.Debugf("Assets downloaded: %d", totalAssets)
-	log.Debugf("Time to URL %s, %0.3f\n", url, float64(ttURL)/float64(time.Second))
+	log.Debugf("Assets downloaded: %d", res.LinkedAssets)
+	log.Debugf("Time to URL %s, %0.3f\n", url, float64(res.HTMLTime)/float64(time.Second))
 
 	return res, nil
 }
