@@ -19,9 +19,9 @@ var (
 	// Version is the browser version.
 	Version = "1.0"
 	// OSName is the operating system name.
-	OSName = osName()
+	OSName = "Martirio"
 	// OSVersion is the operating system version.
-	OSVersion = osVersion()
+	OSVersion = "666"
 	// Comments are additional comments to add to a user agent string.
 	Comments = []string{runtime.Version()}
 )
