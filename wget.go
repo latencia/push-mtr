@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/headzoo/surf"
@@ -19,20 +18,6 @@ type WgetResult struct {
 	DownloadDir  string    `json"string"`
 	LinkedAssets int       `json:"linked_assets"`
 	URL          string    `json:"url"`
-}
-
-func urlGet(url string, topic string) (err error) {
-	var testResult WgetResult
-
-	if testResult, err = wget(url, "", true); err != nil {
-		return fmt.Errorf("Error getting download URL metrics: %s\n", err)
-	}
-
-	msg, _ := json.MarshalIndent(testResult, "", "  ")
-	log.Debugf("Sending URL Get report to %s", topic)
-	pushMsg(topic, string(msg))
-
-	return nil
 }
 
 func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChannel) error {

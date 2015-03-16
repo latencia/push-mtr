@@ -29,8 +29,12 @@ func isTLSOK(uri *url.URL, config *tls.Config) bool {
 	return true
 }
 
-func pushMsg(topic, msg string) {
-	<-mqttClient.Publish(mqtt.QOS_ONE, topic, msg)
+func pushMsg(topic, msg string) bool {
+	_, open := <-mqttClient.Publish(mqtt.QOS_ONE, topic, msg)
+	if !open {
+		return false
+	}
+	return true
 }
 
 // tcp://user:password@host:port

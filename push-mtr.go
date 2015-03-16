@@ -17,27 +17,51 @@ var (
 	MTR_BIN    = "/usr/bin/mtr"
 )
 
-func runUrlGet(scheme, host, topic string) {
+func runUrlGet(scheme, host, topic string, loc *ReportLocation) {
 	// if empty, do skip this test
-	if scheme != "" {
-		if err := urlGet(scheme+"://"+host, topic); err != nil {
-			log.Error(err)
-		}
+	if scheme == "" {
+		log.Debug("Skipping URL test, no scheme given")
+		return
+	}
+
+	testResult, err := wget(scheme+"://"+host, "", true)
+	if err != nil {
+		log.Errorf("Error getting download URL metrics: %s\n", err)
+		return
+	}
+
+	msg, err := json.MarshalIndent(testResult, "", "  ")
+	log.Debugf("Sending URL Get report to %s", topic)
+	// paho closes the channel if there's an error sending
+	if !pushMsg(topic, string(msg)) {
+		log.Errorf("Error running URL get test")
 	}
 }
 
-func runMtrReport(count int, host string, loc *ReportLocation, stdout bool, topic string) (err error) {
+func runMtrReport(count int, host string, loc *ReportLocation, stdout bool, topic string) {
 	r := NewReport(count, host, loc)
+	var msg []byte
+	var err error
 
 	if stdout {
-		msg, _ := json.MarshalIndent(r, "", "  ")
-		fmt.Println(string(msg))
+		// pretty format for stdout, we don't wanna do this when
+		// sending it over the wire, almost doubles the message size
+		msg, err = json.MarshalIndent(r, "", "  ")
 	} else {
-		msg, _ := json.Marshal(r)
-		pushMsg(topic, string(msg))
+		msg, err = json.Marshal(r)
+	}
+	if err != nil {
+		log.Warnf("Error marshaling json")
 	}
 
-	return err
+	if stdout {
+		fmt.Println(string(msg))
+	} else {
+		// paho closes the channel if there's an error sending
+		if !pushMsg(topic, string(msg)) {
+			log.Errorf("Error running mtr test")
+		}
+	}
 }
 
 func main() {
@@ -131,9 +155,7 @@ func main() {
 
 	runTests := func() {
 		go runUrlGet(*furlGet, *host, *urlGetTopic, loc)
-		if err := runMtrReport(*count, *host, loc, *stdout, *topic); err != nil {
-			log.Errorf("Error running mtr report: %s\n", err)
-		}
+		go runMtrReport(*count, *host, loc, *stdout, *topic)
 	}
 
 	if *repeat != 0 {
