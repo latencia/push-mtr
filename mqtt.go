@@ -31,6 +31,7 @@ func isTLSOK(uri *url.URL, config *tls.Config) bool {
 
 func pushMsg(topic, msg string) bool {
 	_, open := <-mqttClient.Publish(mqtt.QOS_ONE, topic, msg)
+	// paho closes the channel if there's an error sending
 	if !open {
 		return false
 	}

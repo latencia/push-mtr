@@ -10,7 +10,8 @@ import (
 	"time"
 )
 
-type WgetResult struct {
+type UrlTestResult struct {
+	Location     *ReportLocation `json:"location"`
 	TimeStart    time.Time `json:"time_start"`
 	HTMLTime     int64     `json:"html_time"`
 	TotalTime    int64     `json:"total_time"`
@@ -38,14 +39,14 @@ func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChann
 //
 // Setting clean to true removes downloadDir after the assets have
 // been downloaded.
-func wget(url string, downloadDir string, clean bool) (res WgetResult, err error) {
+func wget(url string, downloadDir string, clean bool) (res UrlTestResult , err error) {
 	bow := surf.NewBrowser()
 
 	res.URL = url
 	res.TimeStart = time.Now()
 
 	if err = bow.Open(url); err != nil {
-		return WgetResult{}, fmt.Errorf("Error opening URL: %s\n", err)
+		return UrlTestResult{}, fmt.Errorf("Error opening URL: %s\n", err)
 	}
 
 	// time it takes to download the HTML
@@ -59,7 +60,7 @@ func wget(url string, downloadDir string, clean bool) (res WgetResult, err error
 
 	if downloadDir == "" {
 		if res.DownloadDir, err = ioutil.TempDir(downloadDir, ""); err != nil {
-			return WgetResult{}, fmt.Errorf("Wget: Error creating tempdir: %s\n", err)
+			return UrlTestResult{}, fmt.Errorf("Wget: Error creating tempdir: %s\n", err)
 		}
 		if clean {
 			defer os.RemoveAll(res.DownloadDir)

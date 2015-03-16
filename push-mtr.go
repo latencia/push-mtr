@@ -17,7 +17,7 @@ var (
 	MTR_BIN    = "/usr/bin/mtr"
 )
 
-func runUrlGet(scheme, host, topic string, loc *ReportLocation) {
+func runUrlGet(scheme, host, topic string, stdout bool, loc *ReportLocation) {
 	// if empty, do skip this test
 	if scheme == "" {
 		log.Debug("Skipping URL test, no scheme given")
@@ -29,12 +29,18 @@ func runUrlGet(scheme, host, topic string, loc *ReportLocation) {
 		log.Errorf("Error getting download URL metrics: %s\n", err)
 		return
 	}
+	testResult.Location = loc
 
-	msg, err := json.MarshalIndent(testResult, "", "  ")
-	log.Debugf("Sending URL Get report to %s", topic)
-	// paho closes the channel if there's an error sending
-	if !pushMsg(topic, string(msg)) {
-		log.Errorf("Error running URL get test")
+	var msg []byte
+	if stdout {
+		msg, err = json.MarshalIndent(testResult, "", "  ")
+		fmt.Println(string(msg))
+	} else {
+		msg, err = json.Marshal(testResult)
+		log.Debugf("Sending URL Get report to %s", topic)
+		if !pushMsg(topic, string(msg)) {
+			log.Errorf("Error running URL get test")
+		}
 	}
 }
 
@@ -57,7 +63,6 @@ func runMtrReport(count int, host string, loc *ReportLocation, stdout bool, topi
 	if stdout {
 		fmt.Println(string(msg))
 	} else {
-		// paho closes the channel if there's an error sending
 		if !pushMsg(topic, string(msg)) {
 			log.Errorf("Error running mtr test")
 		}
@@ -154,7 +159,7 @@ func main() {
 	mqttClient, err = newMqttClient(urlList, clientID, tlsConfig)
 
 	runTests := func() {
-		go runUrlGet(*furlGet, *host, *urlGetTopic, loc)
+		go runUrlGet(*furlGet, *host, *urlGetTopic, *stdout, loc)
 		go runMtrReport(*count, *host, loc, *stdout, *topic)
 	}
 
