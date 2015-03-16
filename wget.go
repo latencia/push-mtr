@@ -8,8 +8,6 @@ import (
 	"github.com/headzoo/surf/browser"
 	"io/ioutil"
 	"os"
-	"path"
-	"path/filepath"
 	"time"
 )
 
@@ -38,12 +36,10 @@ func urlGet(url string, topic string) (err error) {
 }
 
 func downloadAsset(dir string, asset interface{}, ch *browser.AsyncDownloadChannel) error {
-	filename := path.Join(dir, asset.(browser.Assetable).Url().Path)
-	os.MkdirAll(filepath.Dir(filename), 0755)
-
-	fout, err := os.Create(filename)
+	// we're not interested in the downloaded assets so discard them
+	fout, err := os.Create("/dev/null")
 	if err != nil {
-		return fmt.Errorf("Error creating temp file: %s\n", err)
+		return err
 	}
 	asset.(browser.Downloadable).DownloadAsync(fout, *ch)
 
