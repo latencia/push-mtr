@@ -17,6 +17,15 @@ var (
 	MTR_BIN    = "/usr/bin/mtr"
 )
 
+func runUrlGet(scheme, host, topic string) {
+	// if empty, do skip this test
+	if scheme != "" {
+		if err := urlGet(scheme+"://"+host, topic); err != nil {
+			log.Error(err)
+		}
+	}
+}
+
 func runMtrReport(count int, host string, loc *ReportLocation, stdout bool, topic string) (err error) {
 	r := NewReport(count, host, loc)
 
@@ -120,36 +129,19 @@ func main() {
 	tlsConfig := newTlsConfig(*cafile, *insecure)
 	mqttClient, err = newMqttClient(urlList, clientID, tlsConfig)
 
-	errorChan := make(chan error)
-	runUrlGet := func(scheme, host, topic string) {
-		go func() {
-			if err := urlGet(scheme+"://"+host, topic); err != nil {
-				errorChan <- err
-			}
-		}()
-		select {
-		case err := <-errorChan:
-			log.Error(err)
-		default:
+	runTests := func() {
+		go runUrlGet(*furlGet, *host, *urlGetTopic, loc)
+		if err := runMtrReport(*count, *host, loc, *stdout, *topic); err != nil {
+			log.Errorf("Error running mtr report: %s\n", err)
 		}
 	}
 
 	if *repeat != 0 {
 		timer := time.NewTicker(time.Duration(*repeat) * time.Second)
 		for range timer.C {
-			if *furlGet != "" {
-				runUrlGet(*furlGet, *host, *urlGetTopic)
-			}
-			if err := runMtrReport(*count, *host, loc, *stdout, *topic); err != nil {
-				log.Errorf("Error running mtr report: %s\n", err)
-			}
+			runTests()
 		}
 	} else {
-		if *furlGet != "" {
-			runUrlGet(*furlGet, *host, *urlGetTopic)
-		}
-		if err := runMtrReport(*count, *host, loc, *stdout, *topic); err != nil {
-			log.Fatalf("Error running mtr report: %s\n", err)
-		}
+		runTests()
 	}
 }
